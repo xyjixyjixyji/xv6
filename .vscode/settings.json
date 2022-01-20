@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "*.cc": "cpp",
+        "user.h": "c",
+        "__config": "c",
+        "locale": "c",
+        "ostream": "c",
+        "param.h": "c",
+        "stat.h": "c"
+    }
+}
