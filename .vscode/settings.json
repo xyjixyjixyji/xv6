@@ -1,0 +1,24 @@
+{
+    "files.associations": {
+        "*.cc": "cpp",
+        "proc.h": "c",
+        "defs.h": "c",
+        "__bit_reference": "c",
+        "__config": "c",
+        "__hash_table": "c",
+        "__split_buffer": "c",
+        "algorithm": "c",
+        "array": "c",
+        "functional": "c",
+        "initializer_list": "c",
+        "ios": "c",
+        "iterator": "c",
+        "locale": "c",
+        "sstream": "c",
+        "string": "c",
+        "string_view": "c",
+        "unordered_map": "c",
+        "utility": "c",
+        "vector": "c"
+    }
+}
