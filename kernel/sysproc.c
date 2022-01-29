@@ -81,6 +81,35 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  int i, npage, MAX_NPAGE = 64;
+  uint64 va, mask, uaddr;
+  pte_t *pte;
+  struct proc *p = myproc();
+
+  mask ^= mask; // clear the bits
+
+  if (argaddr(0, &va) < 0) // va of 1st page
+    return -1;
+  if (argint(1, &npage) < 0) // nr of pages to be checked
+    return -1;
+  if (npage > MAX_NPAGE) // exceed maxmium nr of pages to check
+    return -1;
+  if (argaddr(2, &uaddr) < 0) // bitmask addr in user addr space
+    return -1;
+
+  for (i = 0; i < npage; i++) {
+    if ((pte = walk(p->pagetable, va, 0)) == 0)
+      return -1;
+    if (*pte & PTE_A) {
+      mask |= 1L << i; // set the bitmap
+      *pte &= ~PTE_A; // clear the access bit
+    }
+    va += PGSIZE;
+  }
+
+  if (copyout(p->pagetable, uaddr, (char *)&mask, sizeof(uint64)) < 0)
+    return -1;
+  
   return 0;
 }
 #endif
