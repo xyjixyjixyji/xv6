@@ -105,4 +105,11 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  // these are fields for trap lab
+  int ticks;                   // handler are called each ticks
+  uint64 handler;              // entry of handler
+  int cur_tick;                // cumulative tick
+  struct trapframe alarmframe; // used to backup for original trapframe
+  int alarm_running;           // sign of the alarm is running or not 
 };

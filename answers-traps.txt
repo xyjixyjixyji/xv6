@@ -1,0 +1,6 @@
+1. $a2 holds 13
+2. There is none. The compiler inline the function, calculate f(8) directly.
+3. 0x630 = 0x30 + 1536
+4. pc+4 = 0x34 + 4 = 0x38
+5. 0x726c6400 no
+6. value of $a2

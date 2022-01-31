@@ -77,8 +77,18 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2) {
+    if ((!p->alarm_running) && p->ticks) {
+        p->cur_tick++;                   // update cumulative ticks
+      if (p->cur_tick == p->ticks) {     // triggered
+        p->alarm_running = 1;            // set the alarm running state
+        p->cur_tick = 0;
+        p->alarmframe = *p->trapframe;   // backup trapframe
+        p->trapframe->epc = p->handler;  // jump to handler when sret
+      }
+    }
     yield();
+  }
 
   usertrapret();
 }
