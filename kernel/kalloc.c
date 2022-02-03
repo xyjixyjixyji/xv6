@@ -21,7 +21,7 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
-  char rc[32768]; // refcount
+  uint64 rc[(PHYSTOP >> 12) + 1]; // refcount
 } kmem;
 
 void
@@ -52,6 +52,14 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
+  acquire(&kmem.lock);
+  __dec_rc(pa);
+  if (__pa2rc(pa) > 0) {
+    release(&kmem.lock);
+    return;
+  }
+  release(&kmem.lock);
+
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
@@ -73,8 +81,10 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r) {
     kmem.freelist = r->next;
+    kmem.rc[(uint64)r >> 12] = 1;
+  }
   release(&kmem.lock);
 
   if(r)
@@ -86,33 +96,26 @@ kalloc(void)
 static inline int
 __pa2index(void *pa)
 {
-  return ((char*)pa - (char*)PGROUNDUP((uint64)end)) / PGSIZE;
+  // return ((char*)pa - (char*)PGROUNDUP((uint64)end)) / PGSIZE;
+  return ((uint64)pa >> 12);
 }
 
 int
 __pa2rc(void *pa)
 {
-  acquire(&kmem.lock);
   return kmem.rc[__pa2index(pa)];
-  release(&kmem.lock);
 }
 
-int
+void
 __inc_rc(void *pa)
 {
-  acquire(&kmem.lock);
   ++kmem.rc[__pa2index(pa)];
-  release(&kmem.lock);
-  return 0;
 }
 
-int
+void
 __dec_rc(void *pa)
 {
   if (__pa2rc(pa) == 0)
-    return -1; // already zero
-  acquire(&kmem.lock);
+    return; // already zero
   --kmem.rc[__pa2index(pa)];
-  release(&kmem.lock);
-  return 0;
 }
