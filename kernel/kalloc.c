@@ -21,6 +21,7 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+  char rc[32768]; // refcount
 } kmem;
 
 void
@@ -79,4 +80,39 @@ kalloc(void)
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+// return refcount corresponds to the pa
+static inline int
+__pa2index(void *pa)
+{
+  return ((char*)pa - (char*)PGROUNDUP((uint64)end)) / PGSIZE;
+}
+
+int
+__pa2rc(void *pa)
+{
+  acquire(&kmem.lock);
+  return kmem.rc[__pa2index(pa)];
+  release(&kmem.lock);
+}
+
+int
+__inc_rc(void *pa)
+{
+  acquire(&kmem.lock);
+  ++kmem.rc[__pa2index(pa)];
+  release(&kmem.lock);
+  return 0;
+}
+
+int
+__dec_rc(void *pa)
+{
+  if (__pa2rc(pa) == 0)
+    return -1; // already zero
+  acquire(&kmem.lock);
+  --kmem.rc[__pa2index(pa)];
+  release(&kmem.lock);
+  return 0;
 }
