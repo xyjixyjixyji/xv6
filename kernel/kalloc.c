@@ -10,6 +10,7 @@
 #include "defs.h"
 
 void freerange(void *pa_start, void *pa_end);
+static inline int __pa2index(void* pa);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
@@ -21,7 +22,7 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
-  uint64 rc[(PHYSTOP >> 12) + 1]; // refcount
+  uint64 rc[32768]; // refcount
 } kmem;
 
 void
@@ -36,8 +37,10 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
+    kmem.rc[__pa2index(p)] = 1;
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by v,
@@ -83,7 +86,7 @@ kalloc(void)
   r = kmem.freelist;
   if(r) {
     kmem.freelist = r->next;
-    kmem.rc[(uint64)r >> 12] = 1;
+    kmem.rc[__pa2index(r)] = 1;
   }
   release(&kmem.lock);
 
@@ -97,7 +100,7 @@ static inline int
 __pa2index(void *pa)
 {
   // return ((char*)pa - (char*)PGROUNDUP((uint64)end)) / PGSIZE;
-  return ((uint64)pa >> 12);
+  return ((uint64)pa - (uint64)end) >> 12;
 }
 
 int

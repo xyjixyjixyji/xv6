@@ -67,12 +67,71 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 0xf) {
+    uint64 va = PGROUNDDOWN(r_stval());
+    pte_t *pte;
+
+    if (va >= MAXVA || va > p->sz) {
+      printf("utrap(): bad va\n");
+      p->killed = 1;
+      goto end;
+    }
+
+    if ((va < PGROUNDDOWN(p->trapframe->sp)) && (va >= PGROUNDDOWN(p->trapframe->sp) - PGSIZE)) {
+      printf("utrap(): va in guard page\n");
+      p->killed = 1;
+      goto end;
+    }
+
+    if ((pte = walk(p->pagetable, va, 0)) == 0) {
+      printf("utrap(): bad walk\n");
+      p->killed = 1;
+      goto end;
+    }
+
+    if (((*pte & PTE_C) && (*pte & PTE_U) && (*pte & PTE_V)) == 0) {
+      printf("utrap(): bad flag bits\n");
+      p->killed = 1;
+      goto end;
+    }
+
+    uint64 pa, npa;
+    if((pa = walkaddr(p->pagetable, va)) == 0) {
+      printf("utrap(): bad walkaddr()\n");
+      p->killed = 1;
+      goto end;
+    }
+
+    if (__pa2rc((void*)pa) == 1) {
+      *pte = (*pte | PTE_W) & ~PTE_C;
+    } else {
+      if((npa = (uint64)kalloc()) == 0) {
+        printf("utrap(): bad kalloc()\n");
+        p->killed = 1;
+        goto end;
+      }
+      memmove((void*)npa, (void*)pa, PGSIZE);
+
+      uint64 flag;
+      flag = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_C;
+      *pte = (*pte | PTE_W) & ~PTE_C;
+
+      // uvmunmap(p->pagetable, va, 1, 0);
+      if(mappages(p->pagetable, va, PGSIZE, npa, flag) != 0) {
+        printf("utrap(): bad mappages()\n");
+        p->killed = 1;
+        goto end;
+      }
+      kfree((void*)pa);
+    }
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
 
+end:
   if(p->killed)
     exit(-1);
 

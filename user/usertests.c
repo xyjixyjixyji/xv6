@@ -19,6 +19,13 @@
 
 #define BUFSZ  ((MAXOPBLOCKS+2)*BSIZE)
 
+#define DEBUG
+#ifdef DEBUG
+  #define LOG(format, args...) printf(format, ##args)
+#else
+  #define LOG(format, args...)
+#endif
+
 char buf[BUFSZ];
 
 // what if you pass ridiculous pointers to system calls
@@ -80,13 +87,14 @@ copyout(char *s)
       printf("open(README) failed\n");
       exit(1);
     }
+    // ==================== HERE IS WHERE BUG HAPPENS
     int n = read(fd, (void*)addr, 8192);
     if(n > 0){
       printf("read(fd, %p, 8192) returned %d, not -1 or 0\n", addr, n);
       exit(1);
     }
     close(fd);
-
+    // ==================== HERE 
     int fds[2];
     if(pipe(fds) < 0){
       printf("pipe() failed\n");
