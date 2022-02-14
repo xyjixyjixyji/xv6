@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "*.cc": "cpp",
+        "locale": "c",
+        "string": "c",
+        "user.h": "c",
+        "proc.h": "c",
+        "types.h": "c",
+        "stat.h": "c"
+    }
+}
