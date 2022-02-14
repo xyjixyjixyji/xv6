@@ -83,6 +83,7 @@ thread_schedule(void)
      * thread_switch(??, ??);
      */
     // TODO: ADD CODE HERE
+    thread_switch(&current_thread->ctx, &next_thread->ctx);
   } else
     next_thread = 0;
 }
