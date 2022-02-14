@@ -99,6 +99,8 @@ thread_create(void (*func)())
   t->state = RUNNABLE;
   // YOUR CODE HERE
   // TODO: ADD CODE HERE
+  t->ctx.ra = func;
+  t->ctx.sp = t->stack;
 }
 
 void 
