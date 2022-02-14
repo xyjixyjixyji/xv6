@@ -83,7 +83,7 @@ thread_schedule(void)
      * thread_switch(??, ??);
      */
     // TODO: ADD CODE HERE
-    thread_switch(&current_thread->ctx, &next_thread->ctx);
+    thread_switch((uint64)&t->ctx, (uint64)&next_thread->ctx);
   } else
     next_thread = 0;
 }
@@ -99,8 +99,8 @@ thread_create(void (*func)())
   t->state = RUNNABLE;
   // YOUR CODE HERE
   // TODO: ADD CODE HERE
-  t->ctx.ra = func;
-  t->ctx.sp = t->stack;
+  t->ctx.ra = (uint64)func;
+  t->ctx.sp = (uint64)t->stack + STACK_SIZE;
 }
 
 void 
