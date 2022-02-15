@@ -8,6 +8,43 @@
 #include "e1000_dev.h"
 #include "net.h"
 
+/**
+ * TODO:
+ * READ: Chapter 3, 14 and 4.1. Chapter 13 as reference. 
+ * TODO:
+ * MAYBE READ: Chapter2(arch)
+ */
+
+/**
+ * OVERVIEW: 
+ *    1. e1000_init(): DMA, e1000 interacts with RAM directly 
+ * 
+ *    2. e1000 has **buffers** to write pkts into, buffers are 
+ *       described as **array of descriptors**
+ *        2.1. rx_desc: rx descriptor format -> has the addr of mbuf
+ * 
+ *    3. mbuf: packet buffers, it is ring structured buffer
+ *        3.1. tx_desc: tx descriptor format
+ * 
+ *    4. stack calls e1000_transmit() to send
+ *        4.1. code must place a ptr to pkt data in a desc in TX ring
+ * 
+ *    5. make sure mbuf is eventually freed, but only after E1000 has done tx
+ *        5.1. If E1000_TXD_STAT_DD is set, its done
+ * 
+ *    6. When rx, e1000_recv() should 
+ *        6.1. scan the RX ring and deliver each new pkt's mbuf to network stack
+ *             by calling net_rx()
+ *        6.2. allocate a new mbuf and place it into descriptor
+ * 
+ *    7. driver interacts with E1000 through mmap ctrl regs
+ *        7.1. detect when pkts are available
+ *        7.2. inform E1000 that driver fills some TX desc with pkts to send
+ *        7.3. global arg **regs** holds a ptr to E1000's 1st ctrl register, index
+ *             it as an array, the indices are in e1000_dev.h
+ *             7.3.1. E1000_RDT and E1000_TDT are useful
+ */
+
 #define TX_RING_SIZE 16
 static struct tx_desc tx_ring[TX_RING_SIZE] __attribute__((aligned(16)));
 static struct mbuf *tx_mbufs[TX_RING_SIZE];
