@@ -279,8 +279,24 @@ net_rx_arp(struct mbuf *m)
   // handle the ARP reply -> put it in arp cache
   if (ntohs(arphdr->op) == ARP_OP_REPLY && tip == local_ip) {
     // this is a targeted arp reply
-    arp_cache[arp_cache_ptr].ipa = ntohl(arphdr->sip);
+    // TODO: check if the ip exists, if so, update it
+    int i;
+    uint32 ipa;
+    ipa = ntohl(arphdr->sip);
+    // check for update
+    for (i = 0; i < arp_cache_ptr; ++i) {
+      if (arp_cache[i].ipa == ipa) {
+        // found one, update it
+        memmove(&arp_cache[i].ha, arphdr->sha, ETHADDR_LEN);
+        printf("ARP ENTRY UPDATED.\n");
+        goto done;
+      }
+    }
+
+    // no same ip exists, insert an entry
+    arp_cache[arp_cache_ptr].ipa = ipa;
     memmove(&arp_cache[arp_cache_ptr].ha, arphdr->sha, ETHADDR_LEN);
+
     printf("%d ARP ENTRY SAVED.\n", arp_cache_ptr);
   }
 
