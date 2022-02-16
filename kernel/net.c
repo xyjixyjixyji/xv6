@@ -164,10 +164,17 @@ in_cksum(const unsigned char *addr, int len)
 
 // sends an ethernet packet
 static void
-net_tx_eth(struct mbuf *m, uint16 ethtype, uint32 dip)
+net_tx_eth(struct mbuf *m, uint16 ethtype)
 {
   struct eth *ethhdr;
+  struct ip *iphdr; /* used for arpcache check, update to not leaking to interface */
   int i;
+  uint32 dip;
+
+  // extract the destip
+  iphdr = mbufpullhdr(m, *iphdr);
+  dip = iphdr->ip_dst;
+  mbufpushhdr(m, *iphdr);
 
   ethhdr = mbufpushhdr(m, *ethhdr);
   memmove(ethhdr->shost, local_mac, ETHADDR_LEN);
@@ -213,7 +220,7 @@ net_tx_ip(struct mbuf *m, uint8 proto, uint32 dip)
   iphdr->ip_sum = in_cksum((unsigned char *)iphdr, sizeof(*iphdr));
 
   // now on to the ethernet layer
-  net_tx_eth(m, ETHTYPE_IP, dip);
+  net_tx_eth(m, ETHTYPE_IP);
 }
 
 // sends a UDP packet
@@ -260,7 +267,7 @@ net_tx_arp(uint16 op, uint8 dmac[ETHADDR_LEN], uint32 dip)
   arphdr->tip = htonl(dip);
 
   // header is ready, send the packet
-  net_tx_eth(m, ETHTYPE_ARP, 0);
+  net_tx_eth(m, ETHTYPE_ARP);
   return 0;
 }
 
