@@ -15,6 +15,9 @@ static uint32 local_ip = MAKE_IP_ADDR(10, 0, 2, 15); // qemu's idea of the guest
 static uint8 local_mac[ETHADDR_LEN] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
 static uint8 broadcast_mac[ETHADDR_LEN] = { 0xFF, 0XFF, 0XFF, 0XFF, 0XFF, 0XFF };
 
+static struct arpcache_entry arp_cache[NENTRY]; /* arp cache */
+static int arp_cache_ptr = 0; /* the position that arp cache **to be written** */
+
 // Strips data from the start of the buffer and returns a pointer to it.
 // Returns 0 if less than the full requested length is available.
 char *
@@ -269,15 +272,26 @@ net_rx_arp(struct mbuf *m)
   // only requests are supported so far
   // check if our IP was solicited
   tip = ntohl(arphdr->tip); // target IP address
-  if (ntohs(arphdr->op) != ARP_OP_REQUEST || tip != local_ip)
+  /* if (ntohs(arphdr->op) != ARP_OP_REQUEST || tip != local_ip)
     goto done;
+  */
 
-  // handle the ARP request
-  memmove(smac, arphdr->sha, ETHADDR_LEN); // sender's ethernet address
-  sip = ntohl(arphdr->sip); // sender's IP address (qemu's slirp)
-  net_tx_arp(ARP_OP_REPLY, smac, sip);
+  // handle the ARP reply -> put it in arp cache
+  if (ntohs(arphdr->op) == ARP_OP_REPLY && tip == local_ip) {
+    // this is a targeted arp reply
+    arp_cache[arp_cache_ptr].ipa = ntohl(arphdr->sip);
+    memmove(&arp_cache[arp_cache_ptr].ha, arphdr->sha, ETHADDR_LEN);
+    printf("%d ARP ENTRY SAVED.\n", arp_cache_ptr);
+  }
 
-done:
+  if (ntohs(arphdr->op) == ARP_OP_REQUEST && tip == local_ip) {
+    // handle the ARP request
+    memmove(smac, arphdr->sha, ETHADDR_LEN); // sender's ethernet address
+    sip = ntohl(arphdr->sip); // sender's IP address (qemu's slirp)
+    net_tx_arp(ARP_OP_REPLY, smac, sip);
+  }
+
+  done:
   mbuffree(m);
 }
 

@@ -171,3 +171,10 @@ struct dns_data {
   uint32 ttl;
   uint16 len;
 } __attribute__((packed));
+
+#define NENTRY 64
+struct arpcache_entry
+{
+  uint32    ipa;              /* ip addr */
+  char      ha[ETHADDR_LEN];  /* hardware addr */
+};
