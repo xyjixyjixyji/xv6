@@ -1,0 +1,5 @@
+This is because when 2 threads put a <key, value> pair at the same time,
+they might goes into the same hash bucket.
+
+When two <key, value> pairs are updated at the same time, only the latter one 
+can be reserved while the former one is lost.
