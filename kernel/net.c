@@ -164,17 +164,32 @@ in_cksum(const unsigned char *addr, int len)
 
 // sends an ethernet packet
 static void
-net_tx_eth(struct mbuf *m, uint16 ethtype)
+net_tx_eth(struct mbuf *m, uint16 ethtype, uint32 dip)
 {
   struct eth *ethhdr;
+  int i;
 
   ethhdr = mbufpushhdr(m, *ethhdr);
   memmove(ethhdr->shost, local_mac, ETHADDR_LEN);
   // In a real networking stack, dhost would be set to the address discovered
   // through ARP. Because we don't support enough of the ARP protocol, set it
   // to broadcast instead.
+  
+  // search the arp cache, if found, send with corresponding MAC addr
+  // if not found, broadcast
+  for (i = 0; i < arp_cache_ptr; i++) {
+    if (arp_cache[i].ipa == dip) {
+      // found one, fill in the dmac
+      memmove(ethhdr->dhost, arp_cache[i].ha, ETHADDR_LEN);
+      ethhdr->type = htons(ethtype);
+      goto transmit;
+    }
+  }
+
   memmove(ethhdr->dhost, broadcast_mac, ETHADDR_LEN);
   ethhdr->type = htons(ethtype);
+
+transmit:
   if (e1000_transmit(m)) {
     mbuffree(m);
   }
@@ -198,7 +213,7 @@ net_tx_ip(struct mbuf *m, uint8 proto, uint32 dip)
   iphdr->ip_sum = in_cksum((unsigned char *)iphdr, sizeof(*iphdr));
 
   // now on to the ethernet layer
-  net_tx_eth(m, ETHTYPE_IP);
+  net_tx_eth(m, ETHTYPE_IP, dip);
 }
 
 // sends a UDP packet
@@ -245,7 +260,7 @@ net_tx_arp(uint16 op, uint8 dmac[ETHADDR_LEN], uint32 dip)
   arphdr->tip = htonl(dip);
 
   // header is ready, send the packet
-  net_tx_eth(m, ETHTYPE_ARP);
+  net_tx_eth(m, ETHTYPE_ARP, 0);
   return 0;
 }
 
@@ -296,6 +311,7 @@ net_rx_arp(struct mbuf *m)
     // no same ip exists, insert an entry
     arp_cache[arp_cache_ptr].ipa = ipa;
     memmove(&arp_cache[arp_cache_ptr].ha, arphdr->sha, ETHADDR_LEN);
+    arp_cache_ptr++;
 
     printf("%d ARP ENTRY SAVED.\n", arp_cache_ptr);
   }
