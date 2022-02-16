@@ -23,7 +23,7 @@ char *mbuftrim(struct mbuf *m, unsigned int len);
 // [-headroom-][------buffer------][-tailroom-]
 // |----------------MBUF_SIZE-----------------|
 //
-// These marcos automatically typecast and determine the size of header structs.
+// These macros automatically typecast and determine the size of header structs.
 // In most situations you should use these instead of the raw ops above.
 #define mbufpullhdr(mbuf, hdr) (typeof(hdr)*)mbufpull(mbuf, sizeof(hdr))
 #define mbufpushhdr(mbuf, hdr) (typeof(hdr)*)mbufpush(mbuf, sizeof(hdr))

@@ -8,6 +8,14 @@
 #include "e1000_dev.h"
 #include "net.h"
 
+#define DEBUGGING
+
+#ifdef DEBUGGING
+  #define LOG(...) do { printf(__VA_ARGS__); } while(0)
+#else
+  #define LOG(...) do {} while(0)
+#endif
+
 /**
  * TODO:
  * READ: Chapter 3, 14 and 4.1. Chapter 13 as reference. 
@@ -129,6 +137,10 @@ e1000_init(uint32 *xregs)
   regs[E1000_IMS] = (1 << 7); // RXDW -- Receiver Descriptor Write Back
 }
 
+// start by printing statements
+// Locks: cope w/ the possibility that xv6 might use E1000 from more than one process
+//        or might be using E1000 in a kernel thread when an interrupt arrives
+
 int
 e1000_transmit(struct mbuf *m)
 {
@@ -139,7 +151,37 @@ e1000_transmit(struct mbuf *m)
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after sending.
   //
+
+  /* printf("Hello, this is test from e1000_transmit.\n"); */
+
+  acquire(&e1000_lock);
+  uint32 nridx = regs[E1000_TDT] % TX_RING_SIZE; // next ring index
+
+  // overflow check
+  if (!(tx_ring[nridx].status & E1000_TXD_STAT_DD)) {
+    // the E1000 hasn't finished the corresponding prev tx req
+    LOG("e1000_transmit(): overflow check failed.\n");
+    release(&e1000_lock);
+    return -1;
+  }
+
+  // free the buffer slot
+  if (tx_mbufs[nridx])
+    mbuffree(tx_mbufs[nridx]);
+
+  // plug in the buffer
+  tx_mbufs[nridx] = m;
+  memset((void *)&tx_ring[nridx], 0, sizeof(struct tx_desc)); /* wondering is this necessary */
+
+  tx_ring[nridx].addr = (uint64)m->head;
+  tx_ring[nridx].length = m->len;
+  tx_ring[nridx].cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS;
   
+  // update the ring pos
+  regs[E1000_TDT] = (regs[E1000_TDT] + 1) % TX_RING_SIZE;
+
+  release(&e1000_lock); 
+
   return 0;
 }
 
@@ -152,6 +194,31 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
+
+  while(1) {
+    uint32 nridx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+
+    // no pkt arrives, return
+    if (!(rx_ring[nridx].status & E1000_RXD_STAT_DD)) {
+      return;
+    }
+    // else loop over and over again...
+
+    rx_mbufs[nridx]->len = rx_ring[nridx].length ;
+    net_rx(rx_mbufs[nridx]);
+
+    rx_mbufs[nridx] = mbufalloc(0);
+    if (!rx_mbufs[nridx])
+      panic("e1000_recv: mbufalloc failed\n");
+    
+    rx_ring[nridx].addr = (uint64) rx_mbufs[nridx]->head;
+    rx_ring[nridx].status = 0;
+
+    regs[E1000_RDT] = nridx;
+
+    // TODO: handle pkts exceed RX_RING_SIZE
+  }
+
 }
 
 void
