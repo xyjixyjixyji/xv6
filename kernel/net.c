@@ -310,7 +310,7 @@ net_rx_arp(struct mbuf *m)
       if (arp_cache[i].ipa == ipa) {
         // found one, update it
         memmove(&arp_cache[i].ha, arphdr->sha, ETHADDR_LEN);
-        printf("ARP ENTRY UPDATED.\n");
+        // printf("ARP ENTRY UPDATED.\n");
         goto done;
       }
     }
@@ -320,7 +320,7 @@ net_rx_arp(struct mbuf *m)
     memmove(&arp_cache[arp_cache_ptr].ha, arphdr->sha, ETHADDR_LEN);
     arp_cache_ptr++;
 
-    printf("%d ARP ENTRY SAVED.\n", arp_cache_ptr);
+    // printf("%d ARP ENTRY SAVED.\n", arp_cache_ptr);
   }
 
   if (ntohs(arphdr->op) == ARP_OP_REQUEST && tip == local_ip) {
