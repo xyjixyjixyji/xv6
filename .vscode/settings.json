@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "*.cc": "cpp",
+        "fcntl.h": "c",
+        "param.h": "c",
+        "cassert": "c",
+        "memory": "c",
+        "optional": "c"
+    }
+}
