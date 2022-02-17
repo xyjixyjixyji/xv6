@@ -18,15 +18,38 @@ struct run {
   struct run *next;
 };
 
-struct {
+
+#define LEN_LOCKNAME  16
+struct kmem {
   struct spinlock lock;
+  char lockname[LEN_LOCKNAME];
   struct run *freelist;
-} kmem;
+};
+
+struct kmem kmems[NCPU]; /* per-CPU freelist */
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  int i;
+
+  // name allocation
+  for(i = 0; i < NCPU; ++i) {
+    // first initialize the space, then the name
+    snprintf(kmems[i].lockname, LEN_LOCKNAME, "kmem_%d\0", i);
+    printf("%s\n", kmems[i].lockname);
+  }
+
+  // lock init: 
+  // name format: kmem_0, kmem_2, ..., kmem_$(NCPU)
+  for(i = 0; i < NCPU; ++i) {
+    initlock(&kmems[i].lock, kmems[i].lockname);
+  }
+
+  // freerange calls kfree(), giving free pages to freelist
+  // however, only current running (i.e. one) cpu can get free mem
+  // therefore, if multiple cores are started, the second core has no free mem
+  // thats before **share()** if implemented
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -47,19 +70,25 @@ void
 kfree(void *pa)
 {
   struct run *r;
+  int hartid;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
+  
+  // acquire current cpu #
+  push_off(); // disable interrupt
+  hartid = cpuid();
+  pop_off();  // cpuid acquired, enable interrupt
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  acquire(&kmems[hartid].lock);
+  r->next = kmems[hartid].freelist;
+  kmems[hartid].freelist = r;
+  release(&kmems[hartid].lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -69,12 +98,18 @@ void *
 kalloc(void)
 {
   struct run *r;
+  int hartid;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
+  // acquire current cpu #
+  push_off(); // disable interrupt
+  hartid = cpuid();
+  pop_off();  // cpuid acquired, enable interrupt
+
+  acquire(&kmems[hartid].lock);
+  r = kmems[hartid].freelist;
   if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+    kmems[hartid].freelist = r->next;
+  release(&kmems[hartid].lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
