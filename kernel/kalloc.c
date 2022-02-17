@@ -34,15 +34,10 @@ kinit()
 {
   int i;
 
-  // name allocation
-  for(i = 0; i < NCPU; ++i) {
-    // first initialize the space, then the name
-    snprintf(kmems[i].lockname, LEN_LOCKNAME, "kmem_%d\0", i);
-  }
-
   // lock init: 
   // name format: kmem_0, kmem_2, ..., kmem_$(NCPU - 1)
   for(i = 0; i < NCPU; ++i) {
+    snprintf(kmems[i].lockname, LEN_LOCKNAME, "kmem_%d\0", i);
     initlock(&kmems[i].lock, kmems[i].lockname);
   }
 
@@ -108,11 +103,12 @@ kalloc(void)
   acquire(&kmems[hartid].lock);
   r = kmems[hartid].freelist;
   if(r)
-    kmems[hartid].freelist = r->next;
-  else {
-    // we have no freepage
+    kmems[hartid].freelist = r->next; 
+  else { 
     // we steal it and returns
     r = steal(hartid);
+    if(r)
+      kmems[hartid].freelist = r->next;
   }
   release(&kmems[hartid].lock);
 
@@ -133,7 +129,7 @@ steal(int hartid)
     *   is not necessarily the original one, this is because of the time interval
     *   between steal() is called and cpuid() is actually called
     */
-  struct run *r;
+  struct run *r, *fast, *ret;
   int i;
 
   // push_off();
@@ -146,10 +142,22 @@ steal(int hartid)
 
     acquire(&kmems[i].lock);
     if (kmems[i].freelist) {
+      // for a better impl, we use fast-slow ptr to cur half the freelist
       r = kmems[i].freelist;
+      ret = kmems[i].freelist; /* ret is to save the head */
+      fast = r->next;
+
+      while (fast) {
+        fast = fast->next;
+        if (fast) {
+          r = r->next;
+          fast = fast->next;
+        }
+      }
       kmems[i].freelist = r->next;
+      r->next = 0;
       release(&kmems[i].lock);
-      return r;
+      return ret;
     }
     release(&kmems[i].lock);
   }
