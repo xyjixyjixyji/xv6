@@ -38,11 +38,10 @@ kinit()
   for(i = 0; i < NCPU; ++i) {
     // first initialize the space, then the name
     snprintf(kmems[i].lockname, LEN_LOCKNAME, "kmem_%d\0", i);
-    // printf("%s\n", kmems[i].lockname);
   }
 
   // lock init: 
-  // name format: kmem_0, kmem_2, ..., kmem_$(NCPU)
+  // name format: kmem_0, kmem_2, ..., kmem_$(NCPU - 1)
   for(i = 0; i < NCPU; ++i) {
     initlock(&kmems[i].lock, kmems[i].lockname);
   }
@@ -113,8 +112,7 @@ kalloc(void)
   else {
     // we have no freepage
     // we steal it and returns
-    printf("%d is ready to steal.\n", hartid);
-    r = steal();
+    r = steal(hartid);
   }
   release(&kmems[hartid].lock);
 
@@ -123,24 +121,28 @@ kalloc(void)
   return (void*)r;
 }
 
-// found a free page from others
-// if found, we steal it from others' freelist
+// @usage: steal free mem from others
+// @param: hart: caller's hartid
 struct run*
-steal()
+steal(int hartid)
 {
+  /** 
+    * reason why caller's hart is leaked to the interface:
+    *   when steal() is called, lets say called by hartid 1
+    *   if the thread is scheduled to **another CPU**, the running hart of *steal()*
+    *   is not necessarily the original one, this is because of the time interval
+    *   between steal() is called and cpuid() is actually called
+    */
   struct run *r;
-  int hartid, i;
+  int i;
 
-  push_off();
-  hartid = cpuid();
-  pop_off();
+  // push_off();
+  // hartid = cpuid();
+  // pop_off();
 
   for(i = 0; i < NCPU; i++) {
     if (i == hartid)
       continue;
-
-    // BUG1:
-    printf("%d is being stolen, iter = %d\n", hartid, i);
 
     acquire(&kmems[i].lock);
     if (kmems[i].freelist) {
@@ -151,5 +153,5 @@ steal()
     }
     release(&kmems[i].lock);
   }
-  panic("No free pages found in others' freelists.\n");
+  return 0;
 }
