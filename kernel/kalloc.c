@@ -18,6 +18,7 @@ struct run {
   struct run *next;
 };
 
+struct run* steal();
 
 #define LEN_LOCKNAME  16
 struct kmem {
@@ -37,7 +38,7 @@ kinit()
   for(i = 0; i < NCPU; ++i) {
     // first initialize the space, then the name
     snprintf(kmems[i].lockname, LEN_LOCKNAME, "kmem_%d\0", i);
-    printf("%s\n", kmems[i].lockname);
+    // printf("%s\n", kmems[i].lockname);
   }
 
   // lock init: 
@@ -49,7 +50,7 @@ kinit()
   // freerange calls kfree(), giving free pages to freelist
   // however, only current running (i.e. one) cpu can get free mem
   // therefore, if multiple cores are started, the second core has no free mem
-  // thats before **share()** if implemented
+  // thats before **steal()** if implemented
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -109,9 +110,46 @@ kalloc(void)
   r = kmems[hartid].freelist;
   if(r)
     kmems[hartid].freelist = r->next;
+  else {
+    // we have no freepage
+    // we steal it and returns
+    printf("%d is ready to steal.\n", hartid);
+    r = steal();
+  }
   release(&kmems[hartid].lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+// found a free page from others
+// if found, we steal it from others' freelist
+struct run*
+steal()
+{
+  struct run *r;
+  int hartid, i;
+
+  push_off();
+  hartid = cpuid();
+  pop_off();
+
+  for(i = 0; i < NCPU; i++) {
+    if (i == hartid)
+      continue;
+
+    // BUG1:
+    printf("%d is being stolen, iter = %d\n", hartid, i);
+
+    acquire(&kmems[i].lock);
+    if (kmems[i].freelist) {
+      r = kmems[i].freelist;
+      kmems[i].freelist = r->next;
+      release(&kmems[i].lock);
+      return r;
+    }
+    release(&kmems[i].lock);
+  }
+  panic("No free pages found in others' freelists.\n");
 }
