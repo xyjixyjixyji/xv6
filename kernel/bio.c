@@ -23,32 +23,40 @@
 #include "fs.h"
 #include "buf.h"
 
+// buffer cache bucket
+#define HASH(x) (x % NBUCKET)
 struct {
   struct spinlock lock;
   struct buf buf[NBUF];
 
-  // Linked list of all buffers, through prev/next.
-  // Sorted by how recently the buffer was used.
-  // head.next is most recent, head.prev is least.
-  struct buf head;
+  struct buf bkt[NBUCKET]; // each bucket has a doubly-linked list
+  struct spinlock bktlk[NBUCKET];
+
 } bcache;
 
 void
 binit(void)
 {
   struct buf *b;
+  int i;
 
   initlock(&bcache.lock, "bcache");
 
   // Create linked list of buffers
-  bcache.head.prev = &bcache.head;
-  bcache.head.next = &bcache.head;
+  for(i = 0; i < NBUCKET; i++){
+    initlock(&bcache.bktlk[i], "bcache_bkt");
+    bcache.bkt[i].next = &bcache.bkt[i];
+    bcache.bkt[i].prev = &bcache.bkt[i];
+  }
+
   for(b = bcache.buf; b < bcache.buf+NBUF; b++){
-    b->next = bcache.head.next;
-    b->prev = &bcache.head;
     initsleeplock(&b->lock, "buffer");
-    bcache.head.next->prev = b;
-    bcache.head.next = b;
+    // hang all to the first bucket
+    b->next = bcache.bkt[0].next;
+    b->prev = &bcache.bkt[0];
+    bcache.bkt[0].next->prev = b;
+    bcache.bkt[0].next = b;
+    b->ts = ticks;
   }
 }
 
@@ -59,33 +67,111 @@ static struct buf*
 bget(uint dev, uint blockno)
 {
   struct buf *b;
+  int bktno = HASH(blockno), i;
 
-  acquire(&bcache.lock);
-
+  // ---------- FIRST TIME CHECK ---------- //
   // Is the block already cached?
-  for(b = bcache.head.next; b != &bcache.head; b = b->next){
+  acquire(&bcache.bktlk[bktno]);
+  for(b = bcache.bkt[bktno].next; b != &bcache.bkt[bktno]; b = b->next){
     if(b->dev == dev && b->blockno == blockno){
       b->refcnt++;
+      release(&bcache.bktlk[bktno]);
+      acquiresleep(&b->lock);
+      return b;
+    }
+  }
+  release(&bcache.bktlk[bktno]);
+  // ---------- FIRST TIME CHECK ---------- //
+
+  // ---------- EVICTION ---------- //
+  // evict a block, global lock used to serialize the eviction
+  acquire(&bcache.lock);
+
+  // WHY DOUBLE CHECK?
+  // If two threads come here simutaneously, one add the block to cache already
+  // but here, another thread will add the same block to cache again
+  // RESULT: one block, cached by two buffer cache blocks 
+  acquire(&bcache.bktlk[bktno]);
+  for(b = bcache.bkt[bktno].next; b != &bcache.bkt[bktno]; b = b->next){
+    if(b->dev == dev && b->blockno == blockno){
+      b->refcnt++;
+      release(&bcache.bktlk[bktno]);
       release(&bcache.lock);
       acquiresleep(&b->lock);
       return b;
     }
+  }
+  release(&bcache.bktlk[bktno]);
+
+  // ---------- acutal Eviction ---------- // 
+  /**
+   * lo: lowest buffer slot
+   * lo_ts: lowest timestamp
+   * lo_bkt: lowest slot's bucket 
+   */
+  struct buf *lo = 0;
+  uint lo_ts = ~0;
+  int lo_bkt = -1;
+
+  // traverse all buckets, globally find the lowest timestamp block
+  for(i = 0; i < NBUCKET; i++){
+    acquire(&bcache.bktlk[i]);
+    int found = 0;
+    for(b = bcache.bkt[i].next; b != &bcache.bkt[i]; b = b->next){
+      if((b->refcnt == 0) && (b->ts < lo_ts)) {
+        if(lo){
+          // this round, we found a new one, release the old lock
+          lo_bkt = HASH(lo->blockno);
+          if(lo_bkt != i)
+            release(&bcache.bktlk[lo_bkt]);
+        }
+        lo_ts = b->ts;
+        lo = b;
+        found = 1;
+      }
+    }
+
+    // At this line, we still hold one lock --> current lo_bkt's lock
+
+    if(!found)
+      release(&bcache.bktlk[i]);
+    // if found, meaning that lo_bkt = i
+    // which will be release when the next lo is found or the loop is over
   }
 
-  // Not cached.
-  // Recycle the least recently used (LRU) unused buffer.
-  for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
-    if(b->refcnt == 0) {
-      b->dev = dev;
-      b->blockno = blockno;
-      b->valid = 0;
-      b->refcnt = 1;
-      release(&bcache.lock);
-      acquiresleep(&b->lock);
-      return b;
-    }
+  if(!lo)
+    panic("bget: no buffers");
+  
+  // detach it from the old bucket list
+  if (HASH(lo->blockno) != bktno){
+    lo->next->prev = lo->prev;
+    lo->prev->next = lo->next;
   }
-  panic("bget: no buffers");
+
+  // we have done the modification of the old bucket list
+  release(&bcache.bktlk[HASH(lo->blockno)]);
+
+  // attach it to the new bucket list
+  if(HASH(lo->blockno) != bktno){
+    acquire(&bcache.bktlk[bktno]);
+    lo->next = bcache.bkt[bktno].next;
+    lo->prev = &bcache.bkt[bktno];
+    bcache.bkt[bktno].next->prev = lo;
+    bcache.bkt[bktno].next = lo;
+    release(&bcache.bktlk[bktno]);
+  }
+
+  // update at last, since older blockno was still in use
+  lo->dev = dev;
+  lo->blockno = blockno;
+  lo->valid = 0;
+  lo->refcnt = 1;
+  lo->ts = ticks;
+
+  release(&bcache.lock);
+  acquiresleep(&lo->lock);
+
+  return lo;
 }
 
 // Return a locked buf with the contents of the indicated block.
@@ -121,33 +207,28 @@ brelse(struct buf *b)
 
   releasesleep(&b->lock);
 
-  acquire(&bcache.lock);
+  acquire(&bcache.bktlk[HASH(b->blockno)]);
   b->refcnt--;
   if (b->refcnt == 0) {
-    // no one is waiting for it.
-    b->next->prev = b->prev;
-    b->prev->next = b->next;
-    b->next = bcache.head.next;
-    b->prev = &bcache.head;
-    bcache.head.next->prev = b;
-    bcache.head.next = b;
+    // it is evicted, so we want to use this block asap
+    // the bget() will choose this block since it has a smaller ts and zero refcnt
+    b->ts = ticks;
   }
-  
-  release(&bcache.lock);
+  release(&bcache.bktlk[HASH(b->blockno)]);
 }
 
 void
 bpin(struct buf *b) {
-  acquire(&bcache.lock);
+  acquire(&bcache.bktlk[HASH(b->blockno)]);
   b->refcnt++;
-  release(&bcache.lock);
+  release(&bcache.bktlk[HASH(b->blockno)]);
 }
 
 void
 bunpin(struct buf *b) {
-  acquire(&bcache.lock);
+  acquire(&bcache.bktlk[HASH(b->blockno)]);
   b->refcnt--;
-  release(&bcache.lock);
+  release(&bcache.bktlk[HASH(b->blockno)]);
 }
 
 
