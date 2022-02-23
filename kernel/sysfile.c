@@ -284,6 +284,12 @@ create(char *path, short type, short major, short minor)
 }
 
 uint64
+followsym(struct inode* ip)
+{
+
+}
+
+uint64
 sys_open(void)
 {
   char path[MAXPATH];
@@ -310,6 +316,16 @@ sys_open(void)
     }
     ilock(ip);
     if(ip->type == T_DIR && omode != O_RDONLY){
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+  }
+
+  if(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)) {
+    // TODO: implement followsym() to follow the symbolic link
+    // TODO: recursive depth: <= 10
+    if(ip = followsym(ip) == 0) {
       iunlockput(ip);
       end_op();
       return -1;
@@ -485,8 +501,35 @@ sys_pipe(void)
   return 0;
 }
 
+// symbolic link
+// char *target, char *path
+// path is the file created, target is the string to create symlink
 uint64
 sys_symlink(void)
 {
+  // symlink path **to** target
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *tip;
 
+  if(argstr(0, target, MAXPATH) < 0 || argstr(0, path, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+  // create an inode for symlink inode
+  if(tip = create(path, T_SYMLINK, 0, 0) == 0){
+    end_op();
+    return -1;
+  }
+
+  // write the target path to it, offset 0
+  if(writei(tip, 0, (uint64)target, 0, MAXPATH) < 0){
+    end_op();
+    return -1;
+  }
+
+  // create() locks the inode, unlock it
+  iunlockput(tip);
+  end_op();
+  
+  return 0;
 }
