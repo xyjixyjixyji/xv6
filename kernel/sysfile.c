@@ -498,9 +498,13 @@ uint64
 sys_mmap(void)
 {
   // lazy: setup the descriptor of vma and filedup the file
+  int i;
   uint64 addr;
   int length, prot, flags, offset;
   struct file *f;
+
+  struct vm_area *vp = 0;
+  struct proc *p = myproc();
 
   // acquire the arguments
   if (argaddr(0, &addr) || argint(1, &length) || argint(2, &prot) || \
@@ -508,10 +512,36 @@ sys_mmap(void)
         return -1;
       }
 
-  // addr is not used in dummy impl, in fact offset is not used as well
+  // find an unused VMA slot
+  for(i = 0; i < NVMA; i++){
+    if(!p->vma[i].using) {
+      vp = &p->vma[i];
+      break;
+    }
+  }
+  if(!vp)
+    return -1;
+  
+  // find the biggest vma address
   uint64 lastend = VMASTART;
+  for(i = 0; i < NVMA; i++){
+    if(p->vma[i].using && p->vma[i].va_end >= lastend)
+      lastend = p->vma[i].va_end;
+  }
 
-  return -1;
+  // set up the vma descriptor
+  vp->using = 1;
+  vp->va_start = lastend;
+  vp->va_end = PGROUNDUP(vp->va_start + length);
+  vp->length = vp->va_end - vp->va_start;
+  vp->offset = offset;
+  vp->prot = prot;
+  vp->flags = flags;
+  vp->f = f;
+
+  filedup(f);
+
+  return vp->va_start;
 }
 
 // int munmap(void* addr, int len)

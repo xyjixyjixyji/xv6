@@ -85,11 +85,13 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 // descriptor of memory mapped area
 struct vm_area {
   int using;
+  // from [va_start, va_end)
+  // next vma starts at va_end of this
   uint64 va_start;
   uint64 va_end;
   int length;
   int offset;
-  int perm;
+  int prot;
   int flags;
   struct file *f; // f is mapped in the struct
 };
@@ -116,6 +118,6 @@ struct proc {
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
-  struct vm_area *vma[NVMA];   // Memory mapped area
+  struct vm_area vma[NVMA];   // Memory mapped area
   char name[16];               // Process name (debugging)
 };
