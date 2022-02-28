@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -496,6 +497,19 @@ sys_pipe(void)
 uint64
 sys_mmap(void)
 {
+  // lazy: setup the descriptor of vma and filedup the file
+  uint64 addr;
+  int length, prot, flags, offset;
+  struct file *f;
+
+  // acquire the arguments
+  if (argaddr(0, &addr) || argint(1, &length) || argint(2, &prot) || \
+      argint(3, &flags) || (argfd(4, 0, &f) < 0) || argint(5, &offset)){
+        return -1;
+      }
+
+  // addr is not used in dummy impl, in fact offset is not used as well
+  uint64 lastend = VMASTART;
 
   return -1;
 }

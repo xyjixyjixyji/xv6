@@ -82,7 +82,7 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-// memory mapped area
+// descriptor of memory mapped area
 struct vm_area {
   int using;
   uint64 va_start;
@@ -91,7 +91,7 @@ struct vm_area {
   int offset;
   int perm;
   int flags;
-  struct file *f;
+  struct file *f; // f is mapped in the struct
 };
 
 // Per-process state
