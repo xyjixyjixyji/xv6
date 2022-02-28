@@ -485,6 +485,14 @@ sys_pipe(void)
   return 0;
 }
 
+// void *mmap(void* 0, int length, int prot, int flags, int fd, uint 0);
+// returns the address of mmap-ed file, or -1 if failed
+
+// prot: PROT_READ, PROT_WRITE or both --> whether the mem can be RW
+// flags: 
+//        MAP_SHARED: modification will be written back to file
+//                    it is ok to not sharing physicaly pages for two maps
+//        MAP_PRIVATE: will not be written back to file
 uint64
 sys_mmap(void)
 {
@@ -492,6 +500,7 @@ sys_mmap(void)
   return -1;
 }
 
+// int munmap(void* addr, int len)
 uint64
 sys_munmap(void)
 {
