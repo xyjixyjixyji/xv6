@@ -506,11 +506,18 @@ sys_mmap(void)
   struct vm_area *vp = 0;
   struct proc *p = myproc();
 
+  // printf("sys_mmap is called...\n");
+
   // acquire the arguments
   if (argaddr(0, &addr) || argint(1, &length) || argint(2, &prot) || \
       argint(3, &flags) || (argfd(4, 0, &f) < 0) || argint(5, &offset)){
         return -1;
       }
+
+  // sanity check the prot and flags
+  // if file is not writable, its ok to be private and write it in mem
+  if (!f->writable && (prot & PROT_WRITE) && (flag & MAP_SHARED))
+    return -1;
 
   // find an unused VMA slot
   for(i = 0; i < NVMA; i++){
@@ -540,6 +547,8 @@ sys_mmap(void)
   vp->f = f;
 
   filedup(f);
+
+  // printf("sys_mmap exits normally...\n");
 
   return vp->va_start;
 }
