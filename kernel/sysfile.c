@@ -13,9 +13,14 @@
 #include "proc.h"
 #include "fs.h"
 #include "sleeplock.h"
+#include "fcntl.h"
 #include "file.h"
+#include "fs.h"
+#include "file.h"
+#include "sleeplock.h"
 #include "fcntl.h"
 #include "memlayout.h"
+
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -541,7 +546,8 @@ sys_mmap(void)
   vp->va_start = lastend;
   vp->va_end = PGROUNDUP(vp->va_start + length);
   vp->length = vp->va_end - vp->va_start;
-  vp->offset = offset;
+  vp->soff = offset;
+  vp->off = 0;
   vp->prot = prot;
   vp->flags = flags;
   vp->f = f;

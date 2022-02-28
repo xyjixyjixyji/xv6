@@ -90,7 +90,8 @@ struct vm_area {
   uint64 va_start;
   uint64 va_end;
   int length;
-  int offset;
+  int off; // writing offset
+  int soff; // start offset
   int prot;
   int flags;
   struct file *f; // f is mapped in the struct

@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "file.h"
+#include "sleeplock.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -68,7 +72,49 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else if((r_scause() == 13 || r_scause() == 15)){
-    // mmap: lazy impl
+    int i, tot, perm; // byte read
+    uint64 pa;
+    uint64 fa = r_stval(); // faulting addr
+    struct vm_area *vp = 0;
+
+    // find the coresponding vma
+    for(i = 0; i < NVMA; i++){
+      if(p->vma[i].using && fa >= p->vma[i].va_start && fa < p->vma[i].va_end){
+        vp = &p->vma[i];
+        break;
+      }
+    }
+    if(!vp){
+      printf("Pagefault in usertrap pid=%d sepc=%p stval=%p\n", \
+                                        p->pid, r_sepc(), fa);
+      p->killed = 1;
+    }
+
+    // alloc a page from kernel, copy it, and map it to user
+    if((pa = (uint64)kalloc()) == 0){
+      printf("usertrap(): bad kalloc\n");
+      p->killed = 1;
+    }
+    
+    perm = PTE_U;
+    if(vp->prot & PROT_WRITE)
+      perm |= PTE_W;
+    if(vp->prot & PROT_READ)
+      perm |= PTE_R;
+    if((mappages(p->pagetable, vp->va_start+vp->off, PGSIZE, pa, perm)) != 0)
+      p->killed = 1;
+      
+    begin_op();
+    ilock(vp->f->ip);
+    if((tot = readi(vp->f->ip, 0, (uint64)pa, vp->off, PGSIZE)) < 0){
+      iunlock(vp->f->ip);
+      p->killed = 1;
+    }
+    iunlock(vp->f->ip);
+    end_op();
+
+    if(tot < PGSIZE)
+      memset((void*)(pa + tot), 0, PGSIZE - tot); // zero out empty area
 
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
