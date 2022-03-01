@@ -311,6 +311,14 @@ fork(void)
   np->parent = p;
   release(&wait_lock);
 
+  // copy vma
+  for(i = 0; i < NVMA; i++){
+    if(p->vma[i].using){
+      np->vma[i] = p->vma[i];
+      filedup(np->vma[i].f);
+    }
+  }
+
   acquire(&np->lock);
   np->state = RUNNABLE;
   release(&np->lock);
