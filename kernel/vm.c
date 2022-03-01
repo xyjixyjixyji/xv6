@@ -432,3 +432,11 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+int
+va_in_pgtbl(pagetable_t pgtbl, uint64 va)
+{
+  pte_t *pte;
+  pte = walk(pgtbl, va, 0);
+  return pte && (*pte & PTE_V);
+}

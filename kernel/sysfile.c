@@ -14,12 +14,8 @@
 #include "fs.h"
 #include "sleeplock.h"
 #include "fcntl.h"
-#include "file.h"
-#include "fs.h"
-#include "file.h"
-#include "sleeplock.h"
-#include "fcntl.h"
 #include "memlayout.h"
+#include "file.h"
 
 
 // Fetch the nth word-sized system call argument as a file descriptor
@@ -521,7 +517,7 @@ sys_mmap(void)
 
   // sanity check the prot and flags
   // if file is not writable, its ok to be private and write it in mem
-  if (!f->writable && (prot & PROT_WRITE) && (flag & MAP_SHARED))
+  if (!f->writable && (prot & PROT_WRITE) && (flags & MAP_SHARED))
     return -1;
 
   // find an unused VMA slot
@@ -546,8 +542,7 @@ sys_mmap(void)
   vp->va_start = lastend;
   vp->va_end = PGROUNDUP(vp->va_start + length);
   vp->length = vp->va_end - vp->va_start;
-  vp->soff = offset;
-  vp->off = 0;
+  vp->off = offset;
   vp->prot = prot;
   vp->flags = flags;
   vp->f = f;
@@ -560,9 +555,97 @@ sys_mmap(void)
 }
 
 // int munmap(void* addr, int len)
+// three cases:
+//     1. start from vp->va_start
+//     2. end with vp->va_end
+//     3. both, dec refcnt of file
+// remember to Page align the start addr and end addr
+uint64
+munmap(uint64 addr, int um_len)
+{
+  int i;
+  uint64 uma_start;
+
+  struct vm_area *vp = 0;
+  struct proc *p = myproc();
+
+  for(i = 0; i < NVMA; i++){
+    // if(p->vma[i].using){
+    //   printf("start: %p\n", p->vma[i].va_start);
+    //   printf("addr:  %p\n", addr);
+    //   printf("end:   %p\n", p->vma[i].va_end);
+    // }
+    if(p->vma[i].using && (addr >= p->vma[i].va_start) && (addr < p->vma[i].va_end)){
+      vp = &p->vma[i];
+      break;
+    }
+  }
+  if(!vp) {
+    // printf("munmap: vp is nullptr\n");
+    return -1;
+  }
+
+  addr = PGROUNDDOWN(addr); // addr start deleting
+  
+  int whole = 0; // case 3, if whole is true, deref the file
+  if(addr == vp->va_start) {
+    // case 1 or 3
+    uma_start = addr;
+    if(PGROUNDUP(um_len) >= vp->length){
+      // case 3
+      whole = 1;
+      um_len = vp->length;
+    }
+    vp->va_start = uma_start + um_len;
+    vp->off += um_len;
+    vp->length = vp->va_end - vp->va_start;
+  }
+  else {
+    // case 2, end at vp->va_end
+    uma_start = addr;
+    um_len = vp->va_end - uma_start;
+    vp->va_end = uma_start;
+    vp->length = vp->va_end - vp->va_start;
+  }
+
+  // write back the unmapped file, page by page
+  uint64 va; // va is page aligned
+  int bytes_to_write = um_len;
+  int nbytes;
+  for(i = 0; i < um_len / PGSIZE; i++){
+    // due to lazy allocation, the page might not be mapped yet
+    va = uma_start + i * PGSIZE;
+    nbytes = bytes_to_write > PGSIZE ? PGSIZE : bytes_to_write;
+    if(va_in_pgtbl(p->pagetable, va)){
+      // write back the page
+      if(vp->flags & MAP_SHARED)
+        filewrite(vp->f, va, nbytes);
+      // unmap the page
+      uvmunmap(p->pagetable, va, 1, 1);
+    }
+    bytes_to_write -= nbytes;
+  }
+
+  if(whole){
+    // all mmap region is deleted
+    fileclose(vp->f);
+    vp->using = 0;
+  }
+
+  return 0;
+}
+
 uint64
 sys_munmap(void)
 {
+  int len;
+  uint64 addr;
 
-  return -1;
+  if((argaddr(0, &addr)) || (argint(1, &len)))
+    return -1;
+  
+  if(munmap(addr, len) != 0)
+    return -1;
+
+  return 0;
 }

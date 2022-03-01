@@ -6,9 +6,9 @@
 #include "proc.h"
 #include "defs.h"
 #include "fs.h"
-#include "file.h"
-#include "sleeplock.h"
 #include "fcntl.h"
+#include "sleeplock.h"
+#include "file.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -73,7 +73,7 @@ usertrap(void)
     // ok
   } else if((r_scause() == 13 || r_scause() == 15)){
     int i, tot, perm; // byte read
-    uint64 pa;
+    uint64 pa, off;
     uint64 fa = r_stval(); // faulting addr
     struct vm_area *vp = 0;
 
@@ -95,27 +95,27 @@ usertrap(void)
       printf("usertrap(): bad kalloc\n");
       p->killed = 1;
     }
+    memset((void*)pa, 0, PGSIZE);
     
-    perm = PTE_U;
+    perm = PTE_U | PTE_V;
     if(vp->prot & PROT_WRITE)
       perm |= PTE_W;
     if(vp->prot & PROT_READ)
       perm |= PTE_R;
-    if((mappages(p->pagetable, vp->va_start+vp->off, PGSIZE, pa, perm)) != 0)
+    if((mappages(p->pagetable, PGROUNDDOWN(fa), PGSIZE, (uint64)pa, perm)) != 0)
       p->killed = 1;
       
+    off = PGROUNDDOWN(fa) - vp->va_start + vp->off;
     begin_op();
+
     ilock(vp->f->ip);
-    if((tot = readi(vp->f->ip, 0, (uint64)pa, vp->off, PGSIZE)) < 0){
+    if((tot = readi(vp->f->ip, 0, (uint64)pa, off, PGSIZE)) < 0){
       iunlock(vp->f->ip);
       p->killed = 1;
     }
     iunlock(vp->f->ip);
+
     end_op();
-
-    if(tot < PGSIZE)
-      memset((void*)(pa + tot), 0, PGSIZE - tot); // zero out empty area
-
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

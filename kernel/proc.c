@@ -353,6 +353,14 @@ exit(int status)
     }
   }
 
+  // unmap all mmap area
+  for(int i = 0; i < NVMA; i++){
+    if(p->vma[i].using){
+      munmap(p->vma[i].va_start, p->vma[i].length);
+      p->vma[i].using = 0;
+    }
+  }
+
   begin_op();
   iput(p->cwd);
   end_op();
